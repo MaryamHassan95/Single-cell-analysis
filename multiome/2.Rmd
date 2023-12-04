@@ -1,0 +1,167 @@
+---
+title: An R Markdown document converted from "Normalisation and Scaling - Part 2.ipynb"
+output: html_document
+---
+
+## Loading the Necessary Packages:
+
+```{r}
+setwd("/home/maryam/Desktop/Multiome_GEX_data")
+
+options(repr.plot.width=12, repr.plot.height=6)
+
+options(scipen=100) #avoid scientific notation of numbers
+
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(SingleCellExperiment)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+```
+
+## Loading Our Data:
+
+```{r}
+seurObj <- LoadH5Seurat("GEX_QC.h5seurat")
+```
+
+```{r}
+View(seurObj)
+```
+
+### Determining Cell Cycle Events:
+
+  - The Seurat package comes with a list of cell cycle genes, which can be used to identify and regress out related effects.
+
+```{r}
+s.genes <- cc.genes.updated.2019$s.genes
+g2m.genes <- cc.genes.updated.2019$g2m.genes
+```
+
+  - Before determining the cell cycle score, data is supposed to be normalised acc. to https://github.com/satijalab/seurat/issues/1679
+
+```{r}
+seurObj <- NormalizeData(seurObj, normalization.method = "LogNormalize", scale.factor=10000, assay = 'RNA')
+
+seurObj <- FindVariableFeatures(seurObj, selection.method = "vst", nfeatures = 2000, assay = 'RNA')
+```
+
+  - Cell cycle scoring adds a S and G2M score and the predicted cell cycle phase to the cell meta data.
+
+```{r}
+seurObj <- CellCycleScoring(seurObj, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+```
+
+```{r}
+seurObj$CC.Difference <- seurObj$S.Score - seurObj$G2M.Score
+```
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- ScaleData(seurObj, assay = 'RNA', use.umi = TRUE)
+
+proc.time() - ptm
+```
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunPCA(seurObj, features = VariableFeatures(object = seurObj), reduction.name='pca') #RunPCA automatically operates on the scale.data slot
+
+proc.time() - ptm
+```
+
+```{r}
+options(repr.plot.width=20, repr.plot.height=10)
+
+p1 <- DimPlot(seurObj, reduction='pca', shuffle=T, group.by = 'Phase', split.by='sample') + labs(title='No cell cycle correction')
+
+p1
+```
+
+  - From the above, we can see that the PCA confirms that the cells cluster by cell cycle phase.
+
+  - We can also compare the top genes in the first PCs with the known cell cycle genes.
+
+```{r}
+options(repr.plot.width=15, repr.plot.height=15)
+
+DimHeatmap(seurObj, dims=c(1:4), reduction= 'pca', cells=1000, balanced=TRUE, ncol=2, fast=FALSE) &
+scale_fill_viridis(direction = 1)
+```
+
+```{r}
+#Extract genes with highest impact on PC
+
+PCA_features <- c() #create empty vector the build data frame from 
+
+for (i in 1:5){   #iterate over first five PCs
+    loadings <- data.frame(seurObj@reductions$pca@feature.loadings[,i, drop=F]) #get all loadings for the PC
+    up <- loadings %>% top_n(n=15) %>% rownames()  #get the 15 genes with highest loadings
+    down <- loadings %>% top_n(n=-15) %>% rownames() #get the 15 genes with loasted loadings
+    PCA_features <- cbind(PCA_features, c(up, down)) #add to data frame
+    colnames(PCA_features)[i] <- paste0('PC', i)  #name column by PC
+    }
+```
+
+  - Could the top most influential genes per PC be known cell cycle genes?
+
+```{r}
+PCA_cc.genes <- c()
+for (i in 1:ncol(PCA_features)){
+    PCA_cc.genes <- c(PCA_cc.genes, sum(PCA_features[,i] %in% s.genes | PCA_features[,i] %in% g2m.genes))
+    names(PCA_cc.genes)[i] <- paste0('PC', i)
+    }
+
+PCA_cc.genes
+```
+
+```{r}
+sort(s.genes)
+sort(g2m.genes)
+```
+
+  - We can regress repeat the scaling and regress out the cell cycle difference. In this instance we also set use.umi to TRUE, which will result in libray size correction. This is because we will use the corrected data for further analysis and would like to account for this potential technical variation.
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- ScaleData(seurObj, assay = 'RNA', vars.to.regress = c('CC.Difference'), use.umi = TRUE)
+
+proc.time() - ptm
+```
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunPCA(seurObj, features = VariableFeatures(object = seurObj), reduction.name='pca_CC') #RunPCA automatically operates on the scale.data slot
+
+proc.time() - ptm
+```
+
+```{r}
+options(repr.plot.width=20, repr.plot.height=6)
+
+p2 <- DimPlot(seurObj, reduction='pca_CC', shuffle=T, group.by = 'Phase', split.by='sample') + labs(title='After cycle correction')
+
+p1
+p2
+```
+
+  - Read up on Cell Cycle Correction to understand better the second figure
+
+```{r}
+SaveH5Seurat(seurObj, "GEX_cellcycle.h5seurat", overwrite = TRUE)
+```
+

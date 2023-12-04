@@ -1,0 +1,256 @@
+---
+title: An R Markdown document converted from "Batch Correction - Part 4.ipynb"
+output: html_document
+---
+
+# Batch Correction with FastMNN
+
+```{r}
+setwd("/home/maryam/Desktop/Multiome_GEX_data")
+
+options(repr.plot.width=12, repr.plot.height=6)
+
+options(scipen=100) #avoid scientific notation of numbers
+
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(SingleCellExperiment)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(batchelor)
+library(BiocParallel)
+library(BiocNeighbors)
+```
+
+```{r}
+#seurObj <- LoadH5Seurat("GEX_SCTransform.h5seurat")
+seurObj <- LoadH5Seurat("GEX_cellcycle.h5seurat")
+```
+
+  - FastMNN works by first integrating 2 batches, follwed by integratioin of the newly obtained merged batch with a third batch and so on. 
+  - For this reason it is important that there are overlapping cell types between the batches at each step. 
+  - Previous tests showed that while the default merge order already performs quite well, specifying the file order manually based on the respective celltype improves integration further and does not extend the run time. 
+  - In contrast, the auto.merge option increases the run time considerably and does not seem to finish succes
+
+  - I dont think I have the Cell types annotated at the moment though? (I stand to be corrected)
+
+## Batch correction of data processed with LogNorm approach:
+
+```{r}
+ptm <- proc.time()
+
+MNN_CC <- reducedMNN(seurObj@reductions$pca_CC@cell.embeddings,
+                 batch=seurObj$sample, #specify batches
+                 BPPARAM=MulticoreParam(workers=12), #parallelisation
+                 BNPARAM=HnswParam())
+
+proc.time() - ptm
+```
+
+```{r}
+seurObj[["MNN_CC"]] <- CreateDimReducObject(embeddings=MNN_CC$corrected,
+                                        assay="RNA",
+                                        key="MNN_")
+```
+
+```{r}
+seurObj <- RunUMAP(seurObj, dims=1:50, verbose=FALSE,  #play around with the dims and read the article posted in the sc dump group
+                  reduction="MNN_CC", 
+                  reduction.key="umap_",
+                  reduction.name="umap_MNN_CC")
+```
+
+```{r}
+umap_MNN1 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNN_CC", shuffle=T)
+umap_MNN2 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNN_CC", shuffle=T)
+
+options(repr.plot.width=20, repr.plot.height=8)
+
+umap_MNN1+umap_MNN2
+#umap_MNN1
+
+umap_MNN3 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNN_CC", shuffle=T, split.by = 'sample')
+umap_MNN4 <- DimPlot(seurObj, group.by="Phase", reduction="umap_MNN_CC", shuffle=T, split.by = 'sample')
+
+options(repr.plot.width=20, repr.plot.height=12)
+
+#umap_MNN3/umap_MNN4
+umap_MNN4
+```
+
+```{r}
+SaveH5Seurat(seurObj, "GEX_batchcor_lognorm.h5seurat", overwrite = TRUE)
+```
+
+  - Batch Correction on the LogNorm-ed data seems to be mostly successful. 
+
+### Batch correction of data processed with SCTransform:
+
+```{r}
+ptm <- proc.time()
+
+MNN_SCT <- reducedMNN(seurObj@reductions$pca_SCT@cell.embeddings,
+                 batch=seurObj$seq_folder, #specify batches
+                 BPPARAM=MulticoreParam(workers=12), #parallelisation
+                 BNPARAM=HnswParam())
+
+proc.time() - ptm
+```
+
+```{r}
+seurObj[["MNN_SCT"]] <- CreateDimReducObject(embeddings=MNN_SCT$corrected,
+                                        assay="RNA",
+                                        key="MNNSCT_")
+```
+
+```{r}
+seurObj <- RunUMAP(seurObj, dims=1:50, verbose=FALSE,
+                  reduction="MNN_SCT", 
+                  reduction.key="umap_mnn_sct",
+                  reduction.name="umap_MNN_SCT")
+```
+
+```{r}
+umap_MNN5 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNN_SCT", shuffle=T)
+umap_MNN6 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNN_SCT", shuffle=T)
+
+options(repr.plot.width=20, repr.plot.height=8)
+
+umap_MNN5+umap_MNN6
+
+umap_MNN7<- DimPlot(seurObj, group.by="sample", reduction="umap_MNN_SCT", shuffle=T, split.by = 'sample')
+umap_MNN8 <- DimPlot(seurObj, group.by="Phase", reduction="umap_MNN_SCT", shuffle=T, split.by = 'sample')
+
+options(repr.plot.width=20, repr.plot.height=12)
+
+#umap_MNN7/umap_MNN8
+umap_MNN8
+```
+
+```{r}
+SaveH5Seurat(seurObj, "GEX_batchcor_SCTransform.h5seurat", overwrite = TRUE)
+```
+
+```{r}
+options(repr.plot.width=20, repr.plot.height=10)
+
+CC1 <- DimPlot(seurObj, group.by="Phase", reduction="umap_MNN_CC", shuffle=T)+labs(title='LogNorm after batch correction')
+CC2 <- DimPlot(seurObj, group.by="Phase", reduction="umap_MNN_SCT", shuffle=T)+labs(title='SCTransform after batch correction')
+CC1+CC2
+```
+
+  - Why do they look different?
+
+### Testing different numbers of neighbours for UMAP generation
+
+  - The default number of neighbours determined during umap generation is 30. This can be changed with a recommended range of 5-50. The larger the number the more the global structure will be preserved at the cost of the local structure. We can test different values to check for a potential impact on the UMAP structure.
+
+#### For LogNorm:
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunUMAP(seurObj, dims=1:50, verbose=FALSE,
+                  n.neighbors=10,
+                  reduction="MNN_CC", 
+                  reduction.key="umapMNNCCk10_",
+                  reduction.name="umap_MNNCC_k10")
+
+proc.time() - ptm
+```
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunUMAP(seurObj, dims=1:50, verbose=FALSE,
+                  n.neighbors=50,
+                  reduction="MNN_CC", 
+                  reduction.key="umapMNNCCk50_",
+                  reduction.name="umap_MNNCC_k50")
+
+proc.time() - ptm
+```
+
+```{r}
+umap_CC_k10 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNNCC_k10", shuffle=T)+
+            scale_color_manual(values=rainbow(10))+
+            labs(title='k=10')
+umap_CC_k30 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNN_CC", shuffle=T)+
+            scale_color_manual(values=rainbow(10))+
+            labs(title='k=30')
+umap_CC_k50 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNNCC_k50", shuffle=T)+
+            scale_color_manual(values=rainbow(10))+
+            labs(title='k=50')
+
+options(repr.plot.width=28, repr.plot.height=8)
+
+umap_CC_k10+umap_CC_k30+umap_CC_k50
+```
+
+  - All UMAPS look slightly different depending on what the K is set as, as seen from above
+
+#### For SCTransform:
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunUMAP(seurObj, dims=1:50, verbose=FALSE,
+                  n.neighbors=10,
+                  reduction="MNN_SCT", 
+                  reduction.key="umapMNNSCTk10_",
+                  reduction.name="umap_MNNSCT_k10")
+
+proc.time() - ptm
+```
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunUMAP(seurObj, dims=1:50, verbose=FALSE,
+                  n.neighbors=50,
+                  reduction="MNN_SCT", 
+                  reduction.key="umapMNNSCTk50_",
+                  reduction.name="umap_MNNSCT_k50")
+
+proc.time() - ptm
+```
+
+```{r}
+umap_SCT_k10 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNNSCT_k10", shuffle=T)+
+            scale_color_manual(values=rainbow(10))+
+            labs(title='k=10')
+umap_SCT_k30 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNN_SCT", shuffle=T)+
+            scale_color_manual(values=rainbow(10))+
+            labs(title='k=30')
+umap_SCT_k50 <- DimPlot(seurObj, group.by="sample", reduction="umap_MNNSCT_k50", shuffle=T)+
+            scale_color_manual(values=rainbow(10))+
+            labs(title='k=50')
+
+options(repr.plot.width=28, repr.plot.height=8)
+
+umap_SCT_k10+umap_SCT_k30+umap_SCT_k50
+```
+
+```{r}
+gc()
+```
+

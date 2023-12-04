@@ -1,0 +1,136 @@
+---
+title: An R Markdown document converted from "SCTransform - Part 3.ipynb"
+output: html_document
+---
+
+# SCTransform
+
+```{r}
+setwd("/home/maryam/Desktop/Multiome_GEX_data")
+
+options(repr.plot.width=12, repr.plot.height=6)
+
+options(scipen=100) #avoid scientific notation of numbers
+
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(SingleCellExperiment)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+```
+
+```{r}
+seurObj <- LoadH5Seurat("GEX_cellcycle.h5seurat")
+```
+
+```{r}
+library(glmGamPoi)
+```
+
+## Running sctransform incl. removal of cell cycle effects
+
+  - SCTransform by default corrects for library size and returns a corrected UMI matrix. It selects HVGs (3000 by default) and the new corrected results are stored in a new SCT assay slot. This is also automatically set as the new active assay.
+
+  - Where Cell cycle effects observed in the previous analysis? 
+  - Regress out cell cyle phase but retain information about actively cycling vs. quiescent cells.
+  
+  - This process is very time consuming and tends to get stuck, although enough memory seems to be available. We can use the glmGamPoi model to considerably speed up the process. In addition we set conserve.memory to TRUE, which results in skipping of some problematic steps. The minor (?) disadvantage is that scaled data will only be reported for the 3000 HVGs, not for all genes.
+
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- SCTransform(seurObj, vars.to.regress = 'CC.Difference', ncells=5000,
+                       assay='RNA', new.assay.name= 'SCT',
+                       method='glmGamPoi', conserve.memory=T)
+
+proc.time() - ptm
+```
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunPCA(seurObj, features = VariableFeatures(object = seurObj), assay='SCT', reduction.name='pca_SCT') #RunPCA automatically operates on the scale.data slot
+
+proc.time() - ptm
+```
+
+  - Comparison of both approaches with library size and cell cycle corrections show little separation of G2M and S Phase cells in the PCA.
+
+```{r}
+options(repr.plot.width=20, repr.plot.height=6)
+
+p1 <- DimPlot(seurObj, reduction='pca_CC', shuffle=T, group.by = 'Phase', split.by='sample') + labs(title='LogNorm with cell cycle correction')
+p2 <- DimPlot(seurObj, reduction='pca_SCT', shuffle=T, group.by = 'Phase', split.by='sample') + labs(title='SCTransform with cell cycle correction')
+
+p1
+p2
+```
+
+```{r}
+SaveH5Seurat(seurObj, "GEX_SCTransform.h5seurat", overwrite = TRUE)
+```
+
+### Assessing UMAPs for the two normalisation options
+
+  - Based on these PCAs we can generate UMAPs for both approaches to assess the data structure, batch effects and success of cell cycle correction.
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunUMAP(seurObj, dims=1:50, verbose=FALSE, seed.use=42, reduction='pca_CC', n.neighbors=30, reduction.name = 'umap_CC')
+
+proc.time() - ptm
+```
+
+```{r}
+ptm <- proc.time()
+
+seurObj <- RunUMAP(seurObj, dims=1:50, verbose=FALSE, seed.use=42, reduction='pca_SCT', n.neighbors=30, reduction.name = 'umap_SCT')
+
+proc.time() - ptm
+```
+
+```{r}
+options(repr.plot.width=15, repr.plot.height=13)
+
+p3 <- DimPlot(seurObj, group.by="sample", reduction="umap_CC", shuffle=T)+labs(title='UMAP based on LogNorm')
+p4 <- DimPlot(seurObj, group.by="Phase", reduction="umap_CC", shuffle=T)+labs(title='UMAP based on LogNorm')
+
+
+p5 <- DimPlot(seurObj, group.by="sample", reduction="umap_SCT", shuffle=T)+labs(title='UMAP based on SCTransform')
+p6 <- DimPlot(seurObj, group.by="Phase", reduction="umap_SCT", shuffle=T)+labs(title='UMAP based on SCTransform')
+
+
+(p3+p4)/(p5+p6)
+```
+
+  - With both approaches clear batch effects are visible that result in separation of data from different sources into distinct clusters. 
+
+```{r}
+SaveH5Seurat(seurObj, "GEX_SCTransform.h5seurat", overwrite = TRUE)
+```
+
+```{r}
+gc()
+```
+
