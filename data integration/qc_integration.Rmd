@@ -1,0 +1,747 @@
+---
+title: An R Markdown document converted from "scaling_reference_seperately_and_then_performing_integration.ipynb"
+output: html_document
+---
+
+  - As an alternative to try and improve the integration of the two datasets, first perform QC, scaling and normalization seperately.
+  - Then merge both objects into one.
+  - Perform scVI integration using batch_key=
+      - Sample
+      - Technology
+
+## Load the Required Packages:
+
+```{r}
+setwd("/home/maryam/Desktop/scVI/integrating_marieke_data_with_tsp/")
+
+options(repr.plot.width=12, repr.plot.height=6)
+
+options(scipen=100) #avoid scientific notation of numbers
+
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(SingleCellExperiment)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(batchelor)
+library(BiocParallel)
+library(BiocNeighbors)
+
+# Packages needed for scVI:
+library(sceasy)
+library(reticulate)
+```
+
+## Creating the Seperate Seurat Objects:
+
+### Seurat Object for Marieke's dataset:
+
+```{r}
+h5_CISE10 <- list.files(path="/home/maryam/Desktop/marieke_data/CISE10/",  #path to file folder, relative to wd
+             recursive=TRUE,  #also include potential subdirectories
+             pattern=".h5",  #return files matching this expression
+             full.names=TRUE) #get full path instead of just filename
+h5_CISE10
+
+h5_CISE11 <- list.files(path="/home/maryam/Desktop/marieke_data/CISE11/",  #path to file folder, relative to wd
+             recursive=TRUE,  #also include potential subdirectories
+             pattern=".h5",  #return files matching this expression
+             full.names=TRUE) #get full path instead of just filename
+h5_CISE11
+
+h5_S1 <- list.files(path="/home/maryam/Desktop/marieke_data/S1/",  #path to file folder, relative to wd
+         recursive=TRUE,  #also include potential subdirectories
+         pattern=".h5",  #return files matching this expression
+         full.names=TRUE) #get full path instead of just filename
+h5_S1
+
+h5_S2 <- list.files(path="/home/maryam/Desktop/marieke_data/S2/",  #path to file folder, relative to wd
+         recursive=TRUE,  #also include potential subdirectories
+         pattern=".h5",  #return files matching this expression
+         full.names=TRUE) #get full path instead of just filename
+h5_S2
+
+h5_S3 <- list.files(path="/home/maryam/Desktop/marieke_data/S3/",  #path to file folder, relative to wd
+         recursive=TRUE,  #also include potential subdirectories
+         pattern=".h5",  #return files matching this expression
+         full.names=TRUE) #get full path instead of just filename
+h5_S3
+
+h5_TTA15 <-  list.files(path="/home/maryam/Desktop/marieke_data/TTA15/",  #path to file folder, relative to wd
+             recursive=TRUE,  #also include potential subdirectories
+             pattern=".h5",  #return files matching this expression
+             full.names=TRUE) #get full path instead of just filename
+h5_TTA15
+
+h5_TTA16 <-  list.files(path="/home/maryam/Desktop/marieke_data/TTA16/",  #path to file folder, relative to wd
+             recursive=TRUE,  #also include potential subdirectories
+             pattern=".h5",  #return files matching this expression
+             full.names=TRUE) #get full path instead of just filename
+h5_TTA16
+```
+
+```{r}
+# Create a Seurat object for each sample
+#CISE10:
+for (file in c("CISE10/")){
+        cise10_seurat_data <- Read10X(data.dir = paste0("", file))
+        cise10_seurat_obj <- CreateSeuratObject(counts = cise10_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, cise10_seurat_obj)
+}
+
+
+#CISE11:
+for (file in c("CISE11/")){
+        cise11_seurat_data <- Read10X(data.dir = paste0("", file))
+        cise11_seurat_obj <- CreateSeuratObject(counts = cise11_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, cise11_seurat_obj)
+}
+
+#S1:
+for (file in c("S1/")){
+        s1_seurat_data <- Read10X(data.dir = paste0("", file))
+        s1_seurat_obj <- CreateSeuratObject(counts = s1_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, s1_seurat_obj)
+}
+
+#S2:
+for (file in c("S2/")){
+        s2_seurat_data <- Read10X(data.dir = paste0("", file))
+        s2_seurat_obj <- CreateSeuratObject(counts = s2_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, s2_seurat_obj)
+}
+
+
+#S3:
+for (file in c("S3/")){
+        s3_seurat_data <- Read10X(data.dir = paste0("", file))
+        s3_seurat_obj <- CreateSeuratObject(counts = s3_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, s3_seurat_obj)
+}
+
+#TTA15:
+for (file in c("TTA15//")){
+        tta15_seurat_data <- Read10X(data.dir = paste0("", file))
+        tta15_seurat_obj <- CreateSeuratObject(counts = tta15_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, tta15_seurat_obj)
+}
+
+#TTA16:
+for (file in c("TTA16//")){
+        tta16_seurat_data <- Read10X(data.dir = paste0("", file))
+        tta16_seurat_obj <- CreateSeuratObject(counts = tta16_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, tta16_seurat_obj)
+}
+```
+
+#### Merging the above Samples into one Seurat Object:
+
+```{r}
+#Merging all the Samples into one Seurat Object:
+marieke_seurat <- merge(x = cise10_seurat_obj, 
+                      y = c(cise11_seurat_obj, s1_seurat_obj, s2_seurat_obj, s3_seurat_obj, tta15_seurat_obj, tta16_seurat_obj),
+                      add.cell.id = c("cise10", "cise11", "s1", "s2", "s3", "tta15", "tta16"))
+```
+
+```{r}
+marieke_seurat
+```
+
+```{r}
+head(marieke_seurat)
+```
+
+### Seurat Object for the TSP dataset:
+
+```{r}
+h5_MO_TSP1 <- list.files(path="/home/maryam/Desktop/Multiome_GEX_data/MO-TSP1_GEX1/",  #path to file folder, relative to wd
+             recursive=TRUE,  #also include potential subdirectories
+             pattern=".h5",  #return files matching this expression
+             full.names=TRUE) #get full path instead of just filename
+
+h5_MO_TSP1
+
+h5_MO_TSP3 <- list.files(path="/home/maryam/Desktop/Multiome_GEX_data/MO-TSP3_GEX3/",  #path to file folder, relative to wd
+             recursive=TRUE,  #also include potential subdirectories
+             pattern=".h5",  #return files matching this expression
+             full.names=TRUE) #get full path instead of just filename
+
+h5_MO_TSP3
+
+h5_MO_TSP4 <- list.files(path="/home/maryam/Desktop/Multiome_GEX_data/MO-TSP4_GEX4/",  #path to file folder, relative to wd
+             recursive=TRUE,  #also include potential subdirectories
+             pattern=".h5",  #return files matching this expression
+             full.names=TRUE) #get full path instead of just filename
+
+h5_MO_TSP4
+```
+
+```{r}
+#Donor1:
+for (file in c("MO-TSP1_GEX1/")){
+        motsp1_seurat_data <- Read10X(data.dir = paste0("", file))
+        motsp1_seurat_obj <- CreateSeuratObject(counts = motsp1_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, motsp1_seurat_obj)
+}
+
+
+#Donor3:
+for (file in c("MO-TSP3_GEX3/")){
+        motsp3_seurat_data <- Read10X(data.dir = paste0("", file))
+        motsp3_seurat_obj <- CreateSeuratObject(counts = motsp3_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, motsp3_seurat_obj)
+}
+
+#Donor4:
+for (file in c("MO-TSP4_GEX4/")){
+        motsp4_seurat_data <- Read10X(data.dir = paste0("", file))
+        motsp4_seurat_obj <- CreateSeuratObject(counts = motsp4_seurat_data, 
+                                         min.features = 10, 
+                                         project = file)
+        assign(file, motsp4_seurat_obj)
+}
+```
+
+#### Merging the above Samples into one Seurat Object:
+
+```{r}
+#Merging all the Samples into one Seurat Object:
+tsp_seurat <- merge(x = motsp1_seurat_obj, 
+                      y = c(motsp3_seurat_obj, motsp4_seurat_obj),
+                      add.cell.id = c("motsp1", "motsp3", "motsp4"))
+```
+
+```{r}
+tsp_seurat
+```
+
+```{r}
+head(tsp_seurat@meta.data)
+```
+
+### Creating Sample and Technology Columns:
+
+#### Marieke's dataset:
+
+```{r}
+# Create metadata dataframe
+marieke_metadata <- marieke_seurat@meta.data
+
+# Add cell IDs to metadata
+marieke_metadata$cells <- rownames(marieke_metadata)
+
+# Create sample column
+marieke_metadata$sample <- NA
+marieke_metadata$sample[which(str_detect(marieke_metadata$cells, "^cise10_"))] <- "marieke_cise10"
+marieke_metadata$sample[which(str_detect(marieke_metadata$cells, "^cise11_"))] <- "marieke_cise11"
+marieke_metadata$sample[which(str_detect(marieke_metadata$cells, "^s1_"))] <- "marieke_s1"
+marieke_metadata$sample[which(str_detect(marieke_metadata$cells, "^s2_"))] <- "marieke_s2"
+marieke_metadata$sample[which(str_detect(marieke_metadata$cells, "^s3_"))] <- "marieke_s3"
+marieke_metadata$sample[which(str_detect(marieke_metadata$cells, "^tta15_"))] <- "marieke_tta15"
+marieke_metadata$sample[which(str_detect(marieke_metadata$cells, "^tta16_"))] <- "marieke_tta16"
+
+# Create technology column:
+marieke_metadata$technology <- NA
+marieke_metadata$technology[which(str_detect(marieke_metadata$cells, "^cise10_"))] <- "total_RNA"
+marieke_metadata$technology[which(str_detect(marieke_metadata$cells, "^cise11_"))] <- "total_RNA"
+marieke_metadata$technology[which(str_detect(marieke_metadata$cells, "^s1_"))] <- "total_RNA"
+marieke_metadata$technology[which(str_detect(marieke_metadata$cells, "^s2_"))] <- "total_RNA"
+marieke_metadata$technology[which(str_detect(marieke_metadata$cells, "^s3_"))] <- "total_RNA"
+marieke_metadata$technology[which(str_detect(marieke_metadata$cells, "^tta15_"))] <- "total_RNA"
+marieke_metadata$technology[which(str_detect(marieke_metadata$cells, "^tta16_"))] <- "total_RNA"
+
+# Create donor_ID column:
+marieke_metadata$donor_id <- NA
+marieke_metadata$donor_id[which(str_detect(marieke_metadata$cells, "^cise10_"))] <- "ML_A"
+marieke_metadata$donor_id[which(str_detect(marieke_metadata$cells, "^cise11_"))] <- "ML_B"
+marieke_metadata$donor_id[which(str_detect(marieke_metadata$cells, "^s1_"))] <- "ML_A"
+marieke_metadata$donor_id[which(str_detect(marieke_metadata$cells, "^s2_"))] <- "ML_B"
+marieke_metadata$donor_id[which(str_detect(marieke_metadata$cells, "^s3_"))] <- "ML_C"
+marieke_metadata$donor_id[which(str_detect(marieke_metadata$cells, "^tta15_"))] <- "ML_E"
+marieke_metadata$donor_id[which(str_detect(marieke_metadata$cells, "^tta16_"))] <- "ML_F"
+
+# Create kit column:
+marieke_metadata$kit <- NA
+marieke_metadata$kit[which(str_detect(marieke_metadata$cells, "^cise10_"))] <- "sc3'v2"
+marieke_metadata$kit[which(str_detect(marieke_metadata$cells, "^cise11_"))] <- "sc3'v2"
+marieke_metadata$kit[which(str_detect(marieke_metadata$cells, "^s1_"))] <- "sc3'v2"
+marieke_metadata$kit[which(str_detect(marieke_metadata$cells, "^s2_"))] <- "sc3'v2"
+marieke_metadata$kit[which(str_detect(marieke_metadata$cells, "^s3_"))] <- "sc3'v2"
+marieke_metadata$kit[which(str_detect(marieke_metadata$cells, "^tta15_"))] <- "sc3'v2"
+marieke_metadata$kit[which(str_detect(marieke_metadata$cells, "^tta16_"))] <- "sc3'v2"
+```
+
+```{r}
+marieke_metadata
+```
+
+```{r}
+## Add Metadata back to Seurat Object:
+marieke_seurat@meta.data <- marieke_metadata
+View(marieke_seurat@meta.data)
+```
+
+#### MO-TSP dataset:
+
+```{r}
+# Create metadata dataframe
+motsp_metadata <- tsp_seurat@meta.data
+
+# Add cell IDs to metadata
+motsp_metadata$cells <- rownames(motsp_metadata)
+
+# Create sample column
+motsp_metadata$sample <- NA
+motsp_metadata$sample[which(str_detect(motsp_metadata$cells, "^motsp1_"))] <- "motsp1"
+motsp_metadata$sample[which(str_detect(motsp_metadata$cells, "^motsp3_"))] <- "motsp3"
+motsp_metadata$sample[which(str_detect(motsp_metadata$cells, "^motsp4_"))] <- "motsp4"
+
+# Create technology column:
+motsp_metadata$technology <- NA
+motsp_metadata$technology[which(str_detect(motsp_metadata$cells, "^motsp1_"))] <- "nuclei_RNA"
+motsp_metadata$technology[which(str_detect(motsp_metadata$cells, "^motsp3_"))] <- "nuclei_RNA"
+motsp_metadata$technology[which(str_detect(motsp_metadata$cells, "^motsp4_"))] <- "nuclei_RNA"
+
+# Create donor_id column:
+motsp_metadata$donor_id <- NA
+motsp_metadata$donor_id[which(str_detect(motsp_metadata$cells, "^motsp1_"))] <- "ND_04"
+motsp_metadata$donor_id[which(str_detect(motsp_metadata$cells, "^motsp3_"))] <- "TSC_CT14"
+motsp_metadata$donor_id[which(str_detect(motsp_metadata$cells, "^motsp4_"))] <- "TSC_CT17"
+
+# Create kit column:
+motsp_metadata$kit <- NA
+motsp_metadata$kit[which(str_detect(motsp_metadata$cells, "^motsp1_"))] <- "multiome"
+motsp_metadata$kit[which(str_detect(motsp_metadata$cells, "^motsp3_"))] <- "multiome"
+motsp_metadata$kit[which(str_detect(motsp_metadata$cells, "^motsp4_"))] <- "multiome"
+```
+
+```{r}
+head(motsp_metadata)
+```
+
+```{r}
+## Add Metadata back to the Seurat Object: 
+tsp_seurat@meta.data <- motsp_metadata
+View(tsp_seurat@meta.data)
+```
+
+## Quality Control:
+### Marieke dataset:
+
+```{r}
+## Calculating the percent.mt and visualizing the distribution:
+marieke_seurat [["percent.mt"]] <- PercentageFeatureSet(marieke_seurat, pattern = "MT")
+marieke_data <- marieke_seurat@meta.data
+head(marieke_data)
+```
+
+```{r}
+plot_1 <- ggplot(marieke_data, aes(x=log10(nCount_RNA), y=percent.mt, colour=sample)) +
+          geom_point(size=0.05) +
+          facet_wrap(~interaction(orig.ident,sample), ncol=5)+
+          labs(title = "Counts vs. mito%") +
+          scale_colour_viridis_d()+
+          geom_hline(yintercept = 20) +
+          theme_bw()
+
+options(repr.plot.width=14, repr.plot.height=10)
+plot_1
+```
+
+```{r}
+marieke_seurat$keep_viab <- !marieke_seurat$percent.mt >=20  
+marieke_data2 <- marieke_seurat@meta.data                     
+marieke_data2 <- marieke_data2[order(marieke_data2$keep, decreasing=FALSE),]
+```
+
+```{r}
+plot_2 <- ggplot(marieke_data2, aes(x=log10(nCount_RNA), y=percent.mt, colour=keep_viab))+
+            geom_point(size=0.03, alpha=0.5)+
+            facet_wrap(~interaction(orig.ident, sample), ncol=5)+
+            labs(title='Counts vs. mito%')+
+            theme_bw()
+
+plot_3 <- ggplot(marieke_data2, aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=keep_viab))+
+            geom_point(size=0.03, alpha=0.5)+
+            facet_wrap(~interaction(orig.ident, sample), ncol=5)+
+            geom_hline(yintercept = 20) +
+            labs(title='Counts vs. Features')+
+            theme_bw()
+
+options(repr.plot.width=14, repr.plot.height=10)
+plot_2 
+```
+
+```{r}
+## Identifying cells with low read/gene count which may correspond to empty droplets:
+
+options(repr.plot.width=14, repr.plot.height=10)
+
+ggplot(marieke_data, aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=sample))+
+            geom_point(size=0.05)+
+            facet_wrap(~interaction(orig.ident, sample), ncol = 5)+
+            labs(title='Count vs Features')+
+            scale_color_viridis_d()+
+            theme_bw()
+```
+
+```{r}
+marieke_seurat$keep_counts <- !c(marieke_seurat$nFeature_RNA <= 500 | marieke_seurat$nCount_RNA <=1000)
+```
+
+```{r}
+options(repr.plot.width=18, repr.plot.height=10)
+
+plot_4 <- ggplot(marieke_seurat@meta.data, aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=keep_counts))+
+            geom_point(size=0.03, alpha=0.5)+ #(change 0.03 to 1 for larger dot)
+            facet_wrap(~interaction(orig.ident, sample), ncol=5)+
+            labs(title='Counts vs. Features')+
+            theme_bw()
+
+
+plot_4
+```
+
+```{r}
+## Remove the low quality cells:
+
+marieke_seurat@meta.data$keep <- marieke_seurat@meta.data$keep_counts & marieke_seurat@meta.data$keep_viab
+
+table(marieke_seurat@meta.data$keep)
+marieke_seurat@meta.data %>%
+group_by(orig.ident,sample) %>%
+summarise("total cells"=length(keep), "remaining"=sum(keep), "remove"=(length(keep)-sum(keep)), "% remove"=round(((length(keep)-sum(keep))/length(keep)*100),1))
+```
+
+```{r}
+marieke_seurat <- subset(marieke_seurat, subset=keep_counts & keep_viab)
+dim(marieke_seurat)
+```
+
+```{r}
+## Removing the non-informative genes:
+
+keep_genes <- rowSums(marieke_seurat@assays$RNA@counts>0 ) > 3
+table(keep_genes)
+```
+
+```{r}
+marieke_seurat <- marieke_seurat[keep_genes,]
+dim(marieke_seurat)
+```
+
+#### Doublet Removal for Marieke's Dataset:
+
+```{r}
+library(scDblFinder)
+library(BiocParallel)
+```
+
+```{r}
+marieke_sce <- as.SingleCellExperiment(marieke_seurat)
+```
+
+```{r}
+start.time <- Sys.time()
+
+marieke_sce <- scDblFinder(marieke_sce, samples = marieke_seurat@meta.data$filename)
+table(sce$scDblFinder.class)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+time.taken
+```
+
+```{r}
+table(marieke_sce$scDblFinder.class)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+time.taken
+```
+
+```{r}
+marieke_doublets <- rownames(colData(marieke_sce)[marieke_sce$scDblFinder.class=='doublet',])
+marieke_seurat$singlet <- NA
+
+marieke_seurat$singlet <-ifelse(rownames(marieke_seurat@meta.data) %in% marieke_doublets, 'FALSE', 'TRUE')
+```
+
+```{r}
+options(repr.plot.width=14, repr.plot.height=10)
+
+plot_5 <- ggplot(marieke_seurat@meta.data, aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=singlet))+
+            geom_point(size=0.03, alpha=0.5)+
+            facet_wrap(~interaction(orig.ident, sample), ncol=5)+
+            labs(title='Counts vs. Features')+
+            theme_bw()
+
+
+plot_5
+```
+
+```{r}
+marieke_seurat$singlet <- as.logical(marieke_seurat$singlet)
+marieke_seurat <- subset(marieke_seurat, subset=singlet)
+dim(marieke_seurat)
+```
+
+#### Performing Normalization and Scaling on Marieke's Dataset:
+
+```{r}
+marieke_seurat
+```
+
+```{r}
+marieke_seurat <- NormalizeData(marieke_seurat, normalization.method = "LogNormalize", scale.factor = 10000, assay = "RNA")
+```
+
+```{r}
+marieke_seurat <- ScaleData(marieke_seurat)
+```
+
+### MO-TSP Dataset:
+
+```{r}
+## Calculating the percent.mt and visualizing the distribution:
+tsp_seurat [["percent.mt"]] <- PercentageFeatureSet(tsp_seurat, pattern = "MT")
+motsp_data <- tsp_seurat@meta.data
+head(motsp_data)
+```
+
+```{r}
+plot_a <- ggplot(motsp_data, aes(x=log10(nCount_RNA), y=percent.mt, colour=sample)) +
+          geom_point(size=0.05) +
+          facet_wrap(~interaction(orig.ident,sample), ncol=5)+
+          labs(title = "Counts vs. mito%") +
+          scale_colour_viridis_d()+
+          geom_hline(yintercept = 20) +
+          theme_bw()
+
+options(repr.plot.width=14, repr.plot.height=10)
+plot_a
+```
+
+```{r}
+tsp_seurat$keep_viab <- !tsp_seurat$percent.mt >=20  
+motsp_data2 <- tsp_seurat@meta.data                     
+motsp_data2 <- motsp_data2[order(motsp_data2$keep, decreasing=FALSE),]
+```
+
+```{r}
+plot_b <- ggplot(motsp_data2, aes(x=log10(nCount_RNA), y=percent.mt, colour=keep_viab))+
+            geom_point(size=0.03, alpha=0.5)+
+            facet_wrap(~interaction(orig.ident, sample), ncol=5)+
+            labs(title='Counts vs. mito%')+
+            theme_bw()
+
+plot_c <- ggplot(motsp_data2, aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=keep_viab))+
+            geom_point(size=0.03, alpha=0.5)+
+            facet_wrap(~interaction(orig.ident, sample), ncol=5)+
+            geom_hline(yintercept = 20) +
+            labs(title='Counts vs. Features')+
+            theme_bw()
+
+options(repr.plot.width=14, repr.plot.height=10)
+plot_b 
+```
+
+```{r}
+## Identifying cells with low read/gene count which may correspond to empty droplets:
+
+options(repr.plot.width=14, repr.plot.height=10)
+
+ggplot(motsp_data, aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=sample))+
+            geom_point(size=0.05)+
+            facet_wrap(~interaction(orig.ident, sample), ncol = 5)+
+            labs(title='Count vs Features')+
+            scale_color_viridis_d()+
+            theme_bw()
+```
+
+```{r}
+tsp_seurat$keep_counts <- !c(tsp_seurat$nFeature_RNA <= 270 | tsp_seurat$nCount_RNA <=700)
+```
+
+```{r}
+options(repr.plot.width=18, repr.plot.height=10)
+
+plot_d <- ggplot(tsp_seurat@meta.data, aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=keep_counts))+
+            geom_point(size=0.03, alpha=0.5)+ #(change 0.03 to 1 for larger dot)
+            facet_wrap(~interaction(orig.ident, sample), ncol=5)+
+            labs(title='Counts vs. Features')+
+            theme_bw()
+
+
+plot_d
+```
+
+```{r}
+## Remove the low quality cells:
+
+tsp_seurat@meta.data$keep <- tsp_seurat@meta.data$keep_counts & tsp_seurat@meta.data$keep_viab
+
+table(tsp_seurat@meta.data$keep)
+tsp_seurat@meta.data %>%
+group_by(orig.ident,sample) %>%
+summarise("total cells"=length(keep), "remaining"=sum(keep), "remove"=(length(keep)-sum(keep)), "% remove"=round(((length(keep)-sum(keep))/length(keep)*100),1))
+```
+
+```{r}
+tsp_seurat <- subset(tsp_seurat, subset=keep_counts & keep_viab)
+dim(tsp_seurat)
+```
+
+```{r}
+## Removing the non-informative genes:
+
+keep_genes <- rowSums(tsp_seurat@assays$RNA@counts>0 ) > 3
+table(keep_genes)
+```
+
+```{r}
+tsp_seurat <- tsp_seurat[keep_genes,]
+dim(tsp_seurat)
+```
+
+```{r}
+#### Doublet Removal for MO-TSP Dataset:
+```
+
+```{r}
+motsp_sce <- as.SingleCellExperiment(tsp_seurat)
+```
+
+```{r}
+start.time <- Sys.time()
+
+motsp_sce <- scDblFinder(motsp_sce, samples = tsp_seurat@meta.data$filename)
+table(motsp_sce$scDblFinder.class)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+time.taken
+```
+
+```{r}
+motsp_doublets <- rownames(colData(motsp_sce)[motsp_sce$scDblFinder.class=='doublet',])
+tsp_seurat$singlet <- NA
+
+tsp_seurat$singlet <-ifelse(rownames(tsp_seurat@meta.data) %in% motsp_doublets, 'FALSE', 'TRUE')
+```
+
+```{r}
+options(repr.plot.width=14, repr.plot.height=10)
+
+plot_e <- ggplot(tsp_seurat@meta.data, aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=singlet))+
+            geom_point(size=0.03, alpha=0.5)+
+            facet_wrap(~interaction(orig.ident, sample), ncol=5)+
+            labs(title='Counts vs. Features')+
+            theme_bw()
+
+
+plot_e
+```
+
+```{r}
+tsp_seurat$singlet <- as.logical(tsp_seurat$singlet)
+tsp_seurat <- subset(tsp_seurat, subset=singlet)
+dim(tsp_seurat)
+```
+
+#### Performing Normalization and Scaling on MO-TSP Dataset:
+
+```{r}
+tsp_seurat
+```
+
+```{r}
+tsp_seurat <- NormalizeData(tsp_seurat, normalization.method = "LogNormalize", scale.factor = 10000, assay = "RNA")
+```
+
+```{r}
+tsp_seurat <- ScaleData(tsp_seurat)
+```
+
+```{r}
+marieke_seurat
+```
+
+```{r}
+tsp_seurat
+```
+
+## Merge the two Seurat Objects into one:
+
+```{r}
+merged_seurat <- merge(x=marieke_seurat, y= tsp_seurat)
+```
+
+```{r}
+merged_seurat
+```
+
+```{r}
+head(merged_seurat@meta.data)
+```
+
+```{r}
+tail(merged_seurat@meta.data)
+```
+
+```{r}
+seurObj <- merged_seurat
+```
+
+## Find HVG's and Perform Integration:
+
+```{r}
+## Finding Highly Variable Genes:
+seurObj<- FindVariableFeatures(seurObj, selection.method = "vst", nfeatures = 2000)
+top2000 <- head(VariableFeatures(seurObj), 2000)
+seurObj <- seurObj[top2000]
+seurObj
+```
+
+```{r}
+## Save this new seurat object:
+SaveH5Seurat(seurObj, "seperately_")
+```
+

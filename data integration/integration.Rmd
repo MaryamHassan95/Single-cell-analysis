@@ -1,0 +1,209 @@
+---
+title: An R Markdown document converted from "comparing_scvi_harmony_fastMNN_on_integration_of_mariekes_with_tsps.ipynb"
+output: html_document
+---
+
+## Loading the Required Packages:
+
+```{r}
+setwd("/home/maryam/Desktop/scVI/integrating_marieke_data_with_tsp/")
+
+options(repr.plot.width=12, repr.plot.height=6)
+
+options(scipen=100) #avoid scientific notation of numbers
+
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(SingleCellExperiment)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+library(SeuratDisk)
+library(Seurat)
+library(matrixStats)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(batchelor)
+library(BiocParallel)
+library(BiocNeighbors)
+
+# Packages needed for scVI:
+library(sceasy)
+library(reticulate)
+```
+
+## Load the Seurat Object Containing the scvi reduction:
+
+```{r}
+seurObj <- LoadH5Seurat("using_scvi_to_integrate_mariekes_data_with_tsps.h5seurat")
+seurObj
+```
+
+```{r}
+head(seurObj@meta.data)
+```
+
+## Running Harmony:
+
+```{r}
+library(harmony)
+```
+
+```{r}
+seurObj@reductions
+```
+
+```{r}
+## Run PCA:
+seurObj <- RunPCA(seurObj)
+```
+
+```{r}
+## Run Harmony:
+seurObj <- RunHarmony(seurObj, reduction.use = "pca", group.by.vars = "sample")
+seurObj@reductions
+```
+
+```{r}
+## Find Neighbours: 
+seurObj <- FindNeighbors(seurObj, reduction = "harmony",graph.name=c("harmony_nn","harmony_snn") )
+```
+
+```{r}
+## Generate UMAP:
+seurObj <- RunUMAP(seurObj, dims = 1:10, reduction = "harmony", reduction.name = "umap.harmony")
+```
+
+```{r}
+plot_7 <- DimPlot(seurObj,reduction="umap.harmony",group.by="sample",label=FALSE, shuffle = T,  pt.size = 0.2) + labs(title =  "Batch correction using Harmony")
+```
+
+```{r}
+options(repr.plot.width=15, repr.plot.height=10)
+plot_7
+```
+
+## Using FastMNN:
+
+```{r}
+ptm <- proc.time()
+
+MNN <- reducedMNN(seurObj@reductions$pca@cell.embeddings,
+                 batch = seurObj$sample,
+                 BPPARAM=MulticoreParam(workers = 12),
+                 BNPARAM=HnswParam())
+
+proc.time() - ptm
+```
+
+```{r}
+seurObj[["MNN"]] <- CreateDimReducObject(embeddings = MNN$corrected,
+                                           assay="RNA",
+                                           key="MNN_")
+```
+
+```{r}
+seurObj <- RunUMAP(seurObj, dims= 1:10, verbose = FALSE, reduction = "MNN", reduction.key = "umap_", reduction.name = "umap_MNN")
+```
+
+```{r}
+seurObj@reductions
+```
+
+```{r}
+umap_MNN <- DimPlot(seurObj, group.by = "sample", reduction = "umap_MNN", pt.size=0.2, shuffle = T, ) + labs(title = "Batch correction using MNN")
+```
+
+```{r}
+umap_MNN
+```
+
+```{r}
+plot_7 + umap_MNN
+```
+
+```{r}
+scvi_umap <- DimPlot(seurObj, group.by = "sample", reduction = "umap",  pt.size=0.2, shuffle = T, ) + labs(title = "Batch correction using scVI")
+```
+
+```{r}
+options(repr.plot.width=12, repr.plot.height=6)
+scvi_umap + plot_7 + umap_MNN
+```
+
+```{r}
+SaveH5Seurat(seurObj, "using_scvi_to_integrate_mariekes_data_with_tsps.h5seurat", overwrite = TRUE)
+```
+
+### Color by technology the above UMAPS:
+
+```{r}
+plot_harmony <- DimPlot(seurObj,reduction="umap.harmony",group.by="technology",label=FALSE, shuffle = T,  pt.size = 0.2) + labs(title =  "Batch correction using Harmony")
+umap_MNN2 <- DimPlot(seurObj, group.by = "technology", reduction = "umap_MNN", pt.size=0.2, shuffle = T, ) + labs(title = "Batch correction using MNN")
+scvi_umap2 <- DimPlot(seurObj, group.by = "technology", reduction = "umap",  pt.size=0.2, shuffle = T, ) + labs(title = "Batch correction using scVI")
+```
+
+```{r}
+scvi_umap2 + plot_harmony + umap_MNN2
+```
+
+### Color by Enrichment the above UMAPS:
+
+```{r}
+### Add a column specifying the different enrichment strategies used:
+### Create metadata dataframe:
+metadata <- seurObj@meta.data
+
+## Create enrichment column:
+metadata$enrichment <- NA
+metadata$enrichment[which(str_detect(metadata$sample, "marieke_cise10"))] <- "lin-CD34+"
+metadata$enrichment[which(str_detect(metadata$sample, "marieke_cise11"))] <- "lin-CD34+"
+metadata$enrichment[which(str_detect(metadata$sample, "marieke_s1"))] <- "lin-CD34+CD1a-"
+metadata$enrichment[which(str_detect(metadata$sample, "marieke_s2"))] <- "lin-CD34+CD1a-"
+metadata$enrichment[which(str_detect(metadata$sample, "marieke_s3"))] <- "lin-CD34+CD1a-"
+metadata$enrichment[which(str_detect(metadata$sample, "marieke_tta15"))] <- "CD44hi"
+metadata$enrichment[which(str_detect(metadata$sample, "marieke_tta16"))] <- "CD44hi"
+metadata$enrichment[which(str_detect(metadata$sample, "^motsp1"))] <- "CD34+CD1a-CD44+"
+metadata$enrichment[which(str_detect(metadata$sample, "^motsp3"))] <- "CD34+CD1a-CD44+"
+metadata$enrichment[which(str_detect(metadata$sample, "^motsp4"))] <- "CD34+CD1a-CD44+"
+```
+
+```{r}
+head(metadata)
+```
+
+```{r}
+tail(metadata)
+```
+
+```{r}
+## Add metadata back to seurat object:
+seurObj@meta.data <- metadata
+View(seurObj@meta.data)
+```
+
+```{r}
+## Color by enrichment:
+plot_harmony2 <- DimPlot(seurObj,reduction="umap.harmony",group.by="enrichment",label=FALSE, shuffle = T,  pt.size = 0.2) + labs(title =  "Batch correction using Harmony")
+umap_MNN3 <- DimPlot(seurObj, group.by = "enrichment", reduction = "umap_MNN", pt.size=0.2, shuffle = T, ) + labs(title = "Batch correction using MNN")
+scvi_umap3 <- DimPlot(seurObj, group.by = "enrichment", reduction = "umap",  pt.size=0.2, shuffle = T, ) + labs(title = "        Batch correction using scVI")
+```
+
+```{r}
+options(repr.plot.width=14, repr.plot.height=6)
+scvi_umap3 + plot_harmony2 + umap_MNN3
+```
+
