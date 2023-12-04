@@ -616,15 +616,12 @@ group_by(seq_folder,sample) %>%
 summarise("total cells"=length(keep), "remaining"=sum(keep), "remove"=(length(keep)-sum(keep)), "% remove"=round(((length(keep)-sum(keep))/length(keep)*100),1))
 ```
 
-  - It doesnt seem that much has been removed from the cells?
-
 ```{r}
 seurObj <- subset(seurObj, subset=keep_counts & keep_viab)
 dim(seurObj)
 ```
 
 ### Identification and removal of doublets:
-  - Unable to do this step right now as I can't seem to install the scDblFinder package (error returned is 'Cairo returns a non zero result' - still figuring it out)
 
 ```{r}
 SaveH5Seurat(seurObj, "GEX_QC.h5seurat", overwrite=TRUE)
