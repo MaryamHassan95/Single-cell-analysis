@@ -1,0 +1,201 @@
+---
+title: An R Markdown document converted from "/home/maryam/Desktop/scVI/working_scvi_script.ipynb"
+output: html_document
+---
+
+
+```{r}
+use_condaenv("scvi_test")
+```
+
+```{r}
+library(Seurat)
+```
+
+```{r}
+library(cowplot)
+library(devtools)
+library(SeuratData)
+```
+
+```{r}
+data("pbmc3k")
+pbmc <- pbmc3k
+```
+
+```{r}
+pbmc
+```
+
+```{r}
+pbmc <- NormalizeData(pbmc, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+```{r}
+pbmc[["percent.mt"]] <- PercentageFeatureSet(pbmc, pattern = "^MT-")
+# Filter out low quality cells:
+pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt <5)
+```
+
+```{r}
+pbmc <- FindVariableFeatures(pbmc , selection.method = "vst", nfeatures = 2000)
+top2000 <- head(VariableFeatures(pbmc), 2000)
+pbmc <- pbmc[top2000]
+```
+
+```{r}
+sceasy::convertFormat(pbmc, from="seurat", to="anndata",
+                       outFile='pbmc.h5ad')
+```
+
+```{r}
+adata <- convertFormat(pbmc, from="seurat", to="anndata", main_layer="counts", drop_single_values=FALSE)
+print(adata) # Note generally in Python, dataset conventions are obs x var
+```
+
+```{r}
+adata
+```
+
+```{r}
+sc <- import("scanpy", convert = FALSE)
+scvi <- import("scvi", convert = FALSE)
+```
+
+```{r}
+# run setup_anndata
+scvi$model$SCVI$setup_anndata(adata)
+```
+
+```{r}
+# create the model
+model = scvi$model$SCVI(adata)
+```
+
+```{r}
+# train the model
+model$train()
+```
+
+```{r}
+# get the latent representation
+latent = model$get_latent_representation()
+```
+
+```{r}
+# put it back in our original Seurat object
+latent <- as.matrix(latent)
+rownames(latent) = colnames(pbmc)
+pbmc[["scvi"]] <- CreateDimReducObject(embeddings = latent, key = "scvi_", assay = DefaultAssay(pbmc))
+```
+
+```{r}
+# Find clusters, then run UMAP, and visualize
+pbmc <- FindNeighbors(pbmc, dims = 1:10, reduction = "scvi")
+pbmc <- FindClusters(pbmc, resolution =1)
+
+pbmc <- RunUMAP(pbmc, dims = 1:10, reduction = "scvi", n.components = 2)
+
+```
+
+```{r}
+DimPlot(pbmc, reduction = "umap", pt.size = 3)
+```
+
+```{r}
+head(pbmc@meta.data)
+```
+
+## Integrating Datasets with scVI:
+
+```{r}
+data("ifnb")
+```
+
+```{r}
+# Use Seurat for Variable Gene Selection:
+ifnb <- NormalizeData(ifnb, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+```{r}
+ifnb[["percent.mt"]] <- PercentageFeatureSet(ifnb, pattern = "^MT-")
+```
+
+```{r}
+ifnb <- subset(ifnb, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+```
+
+```{r}
+ifnb <- FindVariableFeatures(ifnb, selection.method = "vst", nfeatures = 2000)
+```
+
+```{r}
+ifnb <- ifnb[top2000]
+```
+
+```{r}
+adata <- convertFormat(ifnb, from="seurat", to="anndata", main_layer="counts", drop_single_values=FALSE)
+print(adata)
+```
+
+```{r}
+# run setup_anndata, use column stim for batch
+scvi$model$SCVI$setup_anndata(adata, batch_key = 'stim')
+
+# create the model
+model = scvi$model$SCVI(adata)
+
+# train the model
+model$train()
+
+# to specify the number of epochs when training:
+# model$train(max_epochs = as.integer(400))
+```
+
+```{r}
+# get the latent representation
+latent = model$get_latent_representation()
+
+# put it back in our original Seurat object
+latent <- as.matrix(latent)
+rownames(latent) = colnames(ifnb)
+ifnb[["scvi"]] <- CreateDimReducObject(embeddings = latent, key = "scvi_", assay = DefaultAssay(ifnb))
+```
+
+```{r}
+# for jupyter notebook
+options(repr.plot.width=10, repr.plot.height=8)
+
+ifnb <- RunUMAP(ifnb, dims = 1:10, reduction = "scvi", n.components = 2)
+p1 <- DimPlot(ifnb, reduction = "umap", group.by = "stim", pt.size=2)
+plot_grid(p1)
+```
+
+```{r}
+plot_grid(p1)
+```
+
+```{r}
+options(repr.plot.width=12, repr.plot.height=10)
+
+FeaturePlot(ifnb, features = c("SELL", "CREM", "CD8A", "GNLY", "CD79A", "FCGR3A", 
+    "CCL2", "PPBP"), min.cutoff = "q9")
+```
+
+```{r}
+FeaturePlot(ifnb, features = c("GNLY", "IFI6"), split.by = "stim", max.cutoff = 3, 
+    cols = c("grey", "red"))
+```
+
+```{r}
+ifnb
+```
+
+```{r}
+head(ifnb@meta.data)
+```
+
+```{r}
+tail(ifnb@meta.data)
+```
+
